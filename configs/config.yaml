@@ -1,0 +1,205 @@
+# ==========================
+# 数据库配置 (Database)
+# ==========================
+database:
+  host: "localhost"
+  user: "tangl"
+  password: "tangl@123"
+  database: "supermarket_db"
+  charset: "utf8mb4"
+
+# ==========================
+# 路径配置 (Paths) - 相对路径
+# ==========================
+paths:
+  faiss_index: "data/vector_indexes/product_vectors.faiss"
+
+# ==========================
+# 算法模型配置 (Models)
+# ==========================
+models:
+  features_dim: 768
+  seg_input_size: 1024
+  seg_conf_thresh: 0.6
+  seg_iou_thresh: 0.5
+  cls_input_size: 384
+  unkonwn_cls_conf_thresh: 0.9
+  
+  segmentation:
+    weights: "weights/segmenter/yolo11m_seg_best_1024_v4.pt"
+    
+  classification:
+    bagged: "weights/classifiers/best_convnext_tiny_bagged.pt"
+    bottled: "weights/classifiers/best_convnext_tiny_bottled.pt"
+    boxed: "weights/classifiers/best_convnext_tiny_boxed.pt"
+    canned: "weights/classifiers/best_convnext_tiny_canned.pt"
+
+# ==========================
+# 商品详细信息库 (Products Info)
+# ==========================
+products_info:
+  all_nuts:
+    fine_class: "all_nuts"
+    big_category: "bagged"
+    product_name: "每日坚果"
+    sku: "all_nuts"
+  apple_vinegar:
+    fine_class: "apple_vinegar"
+    big_category: "bottled"
+    product_name: "苹果醋饮料"
+    sku: "apple_vinegar"
+  beef_biscuits:
+    fine_class: "beef_biscuits"
+    big_category: "boxed"
+    product_name: "牛肉馅饼干"
+    sku: "beef_biscuits"
+  butter_cookies:
+    fine_class: "butter_cookies"
+    big_category: "boxed"
+    product_name: "盒马黄油曲奇"
+    sku: "butter_cookies"
+  cola:
+    fine_class: "cola"
+    big_category: "canned"
+    product_name: "罐装可乐"
+    sku: "cola"
+  east_leaf_jasmine_tea_500ml:
+    fine_class: "east_leaf_jasmine_tea_500ml"
+    big_category: "bottled"
+    product_name: "东方树叶茉莉花茶500ml"
+    sku: "east_leaf_jasmine_tea_500ml"
+  east_leaf_jasmine_tea_900ml:
+    fine_class: "east_leaf_jasmine_tea_900ml"
+    big_category: "bottled"
+    product_name: "东方树叶茉莉花茶900ml"
+    sku: "east_leaf_jasmine_tea_900ml"
+  east_leaf_Oolong:
+    fine_class: "east_leaf_Oolong"
+    big_category: "bottled"
+    product_name: "东方树叶乌龙茶"
+    sku: "east_leaf_Oolong"
+  fenta:
+    fine_class: "fenta"
+    big_category: "canned"
+    product_name: "罐装芬达"
+    sku: "fenta"
+  fujiya_cookies:
+    fine_class: "fujiya_cookies"
+    big_category: "boxed"
+    product_name: "不二家曲奇"
+    sku: "fujiya_cookies"
+  ice_lemon_tea:
+    fine_class: "ice_lemon_tea"
+    big_category: "canned"
+    product_name: "冰柠茶"
+    sku: "ice_lemon_tea"
+  jagabee_french_fries:
+    fine_class: "jagabee_french_fries"
+    big_category: "boxed"
+    product_name: "卡乐比薯条"
+    sku: "jagabee_french_fries"
+  jimbeam_apple:
+    fine_class: "jimbeam_apple"
+    big_category: "canned"
+    product_name: "金宾苹果味苏打水"
+    sku: "jimbeam_apple"
+  jimbeam_lemon:
+    fine_class: "jimbeam_lemon"
+    big_category: "canned"
+    product_name: "金宾柠檬味苏打水"
+    sku: "jimbeam_lemon"
+  listerine_mouthwash:
+    fine_class: "listerine_mouthwash"
+    big_category: "bottled"
+    product_name: "李施德林漱口水"
+    sku: "listerine_mouthwash"
+  mineral_water:
+    fine_class: "mineral_water"
+    big_category: "bottled"
+    product_name: "盒马碱性矿泉水"
+    sku: "mineral_water"
+  nfc_orange_juice:
+    fine_class: "nfc_orange_juice"
+    big_category: "bottled"
+    product_name: "瓶装nfc橘汁"
+    sku: "nfc_orange_juice"
+  pejoy_chocolate:
+    fine_class: "pejoy_chocolate"
+    big_category: "boxed"
+    product_name: "百醇巧克力味"
+    sku: "pejoy_chocolate"
+  pocky_nuts:
+    fine_class: "pocky_nuts"
+    big_category: "boxed"
+    product_name: "百奇坚果味"
+    sku: "pocky_nuts"
+  popeye_dried_meat:
+    fine_class: "popeye_dried_meat"
+    big_category: "boxed"
+    product_name: "一条猪牛肉干"
+    sku: "popeye_dried_meat"
+  seedless_red_dates:
+    fine_class: "seedless_red_dates"
+    big_category: "bagged"
+    product_name: "无核红枣"
+    sku: "seedless_red_dates"
+  sprite:
+    fine_class: "sprite"
+    big_category: "canned"
+    product_name: "罐装雪碧"
+    sku: "sprite"
+  suntory_apple:
+    fine_class: "suntory_apple"
+    big_category: "canned"
+    product_name: "三得利苹果味饮料"
+    sku: "suntory_apple"
+  suntory_grapefruit:
+    fine_class: "suntory_grapefruit"
+    big_category: "canned"
+    product_name: "三得利西柚味饮料"
+    sku: "suntory_grapefruit"
+  suntory_mango:
+    fine_class: "suntory_mango"
+    big_category: "canned"
+    product_name: "三得利芒果味饮料"
+    sku: "suntory_mango"
+  suntory_Oolong:
+    fine_class: "suntory_Oolong"
+    big_category: "bottled"
+    product_name: "三得利乌龙茶"
+    sku: "suntory_Oolong"
+  suntory_peach:
+    fine_class: "suntory_peach"
+    big_category: "canned"
+    product_name: "三得利桃子味饮料"
+    sku: "suntory_peach"
+  suntory_strawberry:
+    fine_class: "suntory_strawberry"
+    big_category: "canned"
+    product_name: "三得利草莓味饮料"
+    sku: "suntory_strawberry"
+  suntory_whitegrape:
+    fine_class: "suntory_whitegrape"
+    big_category: "canned"
+    product_name: "三得利白葡萄饮料"
+    sku: "suntory_whitegrape"
+  sweet_potato_slices:
+    fine_class: "sweet_potato_slices"
+    big_category: "bagged"
+    product_name: "红薯干"
+    sku: "sweet_potato_slices"
+  ten_vegetable_rice_cakes:
+    fine_class: "ten_vegetable_rice_cakes"
+    big_category: "bagged"
+    product_name: "十种蔬菜饼"
+    sku: "ten_vegetable_rice_cakes"
+  uha_grape:
+    fine_class: "uha_grape"
+    big_category: "bagged"
+    product_name: "悠哈葡萄味软糖"
+    sku: "uha_grape"
+  yam_and_lotus_seeds:
+    fine_class: "yam_and_lotus_seeds"
+    big_category: "bagged"
+    product_name: "山药莲子"
+    sku: "yam_and_lotus_seeds"

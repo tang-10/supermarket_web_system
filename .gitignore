@@ -1,0 +1,98 @@
+# ==========================================
+# 1. 业务数据与缓存 (Project Specific Data)
+# ==========================================
+# 忽略数据目录下的具体内容，但保留目录结构 (!表示不忽略)
+data/temp_crops/*
+!data/temp_crops/.gitkeep
+
+data/db_storage/*
+!data/db_storage/.gitkeep
+
+data/vector_indexes/*
+!data/vector_indexes/.gitkeep
+
+data/test_videos/*
+!data/test_videos/.gitkeep
+
+# 忽略具体的视频、数据库、索引等大文件格式
+*.mp4
+*.avi
+*.mkv
+*.db
+*.sqlite
+*.sqlite3
+*.index
+*.bin
+
+# ==========================================
+# 2. AI 模型权重 (Model Weights)
+# ==========================================
+# 忽略权重文件夹下的所有文件，但保留目录结构
+weights/*
+!weights/.gitkeep
+!weights/classifiers/
+weights/classifiers/*
+!weights/classifiers/.gitkeep
+!weights/segmenter/
+weights/segmenter/*
+!weights/segmenter/.gitkeep
+# 忽略常见的模型后缀格式
+*.pt
+*.pth
+*.onnx
+*.engine
+*.weights
+*.h5
+
+# ==========================================
+# 3. 环境变量与机密配置 (Env & Secrets)
+# ==========================================
+# 如果有包含密码的配置文件，严禁上传
+.env
+.env.*
+configs/config.local.yaml
+
+# ==========================================
+# 4. Python 原生及虚拟环境 (Python & Venv)
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# 虚拟环境目录 (如果是本地部署的)
+venv/
+.venv/
+env/
+Lib/
+Scripts/
+pyvenv.cfg
+pip-log.txt
+
+# ==========================================
+# 5. 日志文件 (Logs)
+# ==========================================
+*.log
+logs/
+nohup.out
+
+# ==========================================
+# 6. IDE、编辑器及操作系统 (IDE & OS)
+# ==========================================
+# VSCode & PyCharm
+.vscode/
+.idea/
+*.swp
+
+# MacOS & Windows
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ==========================================
+# 7. Jupyter & 数据探索 (Jupyter Notebooks)
+# ==========================================
+# 算法人员做测试或预处理时经常用到的文件
+.ipynb_checkpoints/
+# (如果不想提交算法实验用的 notebook，可以取消下方注释)
+# *.ipynb
