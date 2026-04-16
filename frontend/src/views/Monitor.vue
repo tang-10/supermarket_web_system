@@ -16,6 +16,7 @@
 
       <div v-if="mode === 'file'" class="flex items-center gap-2">
         <input
+          ref="fileInputRef"
           type="file"
           @change="handleFileUpload"
           class="text-sm border p-1 rounded"
@@ -116,6 +117,7 @@ const isPaused = ref(false);
 const videoFileName = ref('');
 const uploadStatus = ref(''); // 新增：上传状态
 const canvasRef = ref(null);
+const fileInputRef = ref(null);
 
 let ws = null;
 
@@ -160,6 +162,10 @@ const stopAndClear = () => {
 const clearVideoSource = () => {
   videoFileName.value = '';
   uploadStatus.value = '';
+  // 重置文件输入框
+  if (fileInputRef.value) {
+    fileInputRef.value.value = '';
+  }
   stopAndClear();
 };
 

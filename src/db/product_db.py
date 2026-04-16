@@ -84,16 +84,18 @@ class ProductDBManager:
         # 使用 ON DUPLICATE KEY UPDATE 防止重复注册报错，存在则更新
         sql = """
         INSERT INTO products (product_name, big_category, fine_class, unit_price, sku)
-        VALUES (%s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s)
         ON DUPLICATE KEY UPDATE 
             product_name = VALUES(product_name),
             big_category = VALUES(big_category),
-            fine_class = VALUES(sku),
+            fine_class = VALUES(fine_class),
             unit_price = VALUES(unit_price)
         """
         product_id = None
 
         try:
+            unit_price = float(product_req.price) if product_req.price else 0.0
+
             with self._get_connection() as conn:
                 with conn.cursor() as cursor:
                     cursor.execute(
@@ -102,7 +104,7 @@ class ProductDBManager:
                             product_req.product_name,
                             product_req.big_category,
                             product_req.sku,
-                            product_req.price,
+                            unit_price,
                             product_req.sku,
                         ),
                     )
@@ -119,10 +121,15 @@ class ProductDBManager:
                         result = cursor.fetchone()
                         if result:
                             product_id = result["id"]
-                conn.commit()
+                if product_id is None:
+                    raise Exception("无法获取有效的 Product ID")
 
-            print(f"商品信息已处理。ID: {product_id}, 名称: {product_req.product_name}")
+                conn.commit()
+                print(
+                    f"商品信息已处理。ID: {product_id}, 名称: {product_req.product_name}"
+                )
             return product_id
         except Exception as e:
-            print(f"[数据库插入错误] 写入商品失败: {e.__doc__}")
+            conn.rollback()
+            print(f"[数据库插入错误] 写入商品失败: {str(e)}")
             return None
