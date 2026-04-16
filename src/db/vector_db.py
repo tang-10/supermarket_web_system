@@ -54,6 +54,9 @@ class VectorDBManager:
         if self.index.ntotal == 0:
             return [{"id": None, "score": 0.0}]
 
+        if not isinstance(query_vector, np.ndarray):
+            query_vector = np.array(query_vector)
+
         if query_vector.ndim == 1:
             query_vector = query_vector.reshape(1, -1).astype(np.float32)
         elif query_vector.ndim == 2:

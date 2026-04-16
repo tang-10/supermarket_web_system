@@ -132,6 +132,9 @@ const uploadStatus = ref(''); // 新增：上传状态
 const canvasRef = ref(null);
 const fileInputRef = ref(null);
 const frameRate = ref(0);
+const frameTimes = ref([]); // 存储最近几帧的时间戳
+const maxFrameHistory = 10; // 计算平均帧率的帧数历史
+
 let lastFrameTime = performance.now();
 const ipCamUrl = ref('http://10.144.144.4:8080/video'); 
 
@@ -238,10 +241,25 @@ const initWebSocket = () => {
 
       // 4. 渲染
       const now = performance.now();
-      const delta = now - lastFrameTime;
-      if (delta > 0) {
-        frameRate.value = Math.round(1000 / delta);
+      frameTimes.value.push(now);
+      
+      // 保持最近 maxFrameHistory 帧的时间戳
+      if (frameTimes.value.length > maxFrameHistory) {
+        frameTimes.value.shift();
       }
+      
+      // 计算平均帧率
+      if (frameTimes.value.length >= 2) {
+        const deltas = [];
+        for (let i = 1; i < frameTimes.value.length; i++) {
+          deltas.push(frameTimes.value[i] - frameTimes.value[i - 1]);
+        }
+        const avgDelta = deltas.reduce((a, b) => a + b, 0) / deltas.length;
+        if (avgDelta > 0) {
+          frameRate.value = Math.round(1000 / avgDelta);
+        }
+      }
+      
       lastFrameTime = now;
 
       const offscreenImg = new Image();

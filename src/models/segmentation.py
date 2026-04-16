@@ -1,6 +1,7 @@
 from ultralytics import YOLO
 from ultralytics.engine.results import Results
 import numpy as np
+import torch
 
 from src.models.base import BaseSegmentationModel
 from src.entities.schemas import DetectResult
@@ -16,8 +17,10 @@ class YoloSegmentationModel(BaseSegmentationModel):
         self.model.eval()
         print(" YOLO 分割模型加载成功！")
 
+    @torch.no_grad()
     def predict(self, frame: np.ndarray) -> list[DetectResult]:
         """对输入帧进行目标侦测和分割，输出包含边界框，大分类，分割图，置信度的侦测结果列表"""
+        detect_results: list[DetectResult] = []
         # 预处理frame:Resize
         if (
             frame.shape[0] == cfg.SEG_INPUT_SIZE
@@ -37,38 +40,68 @@ class YoloSegmentationModel(BaseSegmentationModel):
             conf=cfg.SEG_CONF_THRESH,
             iou=cfg.SEG_IOU_THRESH,
             verbose=False,  # 关闭详细日志输出
+            stream=True,  # 启用生成器模式，处理完立即释放
         )
         detect_results: list[DetectResult] = []
+
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+
         for result in results:
+            if result.boxes is None or len(result.boxes) == 0:
+                continue
+
+            # 【关键优化】：一次性将所有需要的数据搬运到 CPU 并断开梯度
+            # 必须使用 .copy()，否则这些 Numpy 数组会一直引用显存中的大块数据
+            boxes_all = result.boxes.xyxy.cpu().numpy().copy()
+            conf_all = result.boxes.conf.cpu().numpy().copy()
+            cls_all = result.boxes.cls.cpu().numpy().copy()
+
+            # 处理 track_id
+            if result.boxes.id is not None:
+                ids_all = result.boxes.id.cpu().numpy().copy()
+            else:
+                ids_all = np.full(len(boxes_all), -1)
+
+            # 处理 Masks: masks.data 通常非常大，这里只在必要时转换
+            if result.masks is not None:
+                masks_all = result.masks.data.cpu().numpy().copy()
+            else:
+                continue  # 没有 Mask 则无法分割图片，跳过
+
             big_category_names = result.names
-            if len(result.boxes) == 0:
-                return None
-            for bbox, mask, track_id, conf, cls_id in zip(
-                result.boxes.xyxy.cpu().numpy(),
-                result.masks.data.cpu().numpy(),
-                result.boxes.id.cpu().numpy()
-                if result.boxes.id is not None
-                else np.full(len(result.boxes), -1),
-                result.boxes.conf.cpu().numpy(),
-                result.boxes.cls.cpu().numpy(),
-            ):
+
+            for i in range(len(boxes_all)):
+                bbox = boxes_all[i]
+                mask = masks_all[i]
+                track_id = ids_all[i]
+                conf = conf_all[i]
+                cls_id = cls_all[i]
+
                 if track_id is None or track_id < 0:
                     continue
                 # 还原坐标
-                bbox[0] = np.maximum((bbox[0] - pad_left) / scale, 0)
-                bbox[1] = np.maximum((bbox[1] - pad_top) / scale, 0)
-                bbox[2] = np.maximum((bbox[2] - pad_left) / scale, 0)
-                bbox[3] = np.maximum((bbox[3] - pad_top) / scale, 0)
+                x1 = max((bbox[0] - pad_left) / scale, 0)
+                y1 = max((bbox[1] - pad_top) / scale, 0)
+                x2 = max((bbox[2] - pad_left) / scale, 0)
+                y2 = max((bbox[3] - pad_top) / scale, 0)
+
+                bbox = [int(x1), int(y1), int(x2), int(y2)]
+
                 # 得到分割后的商品小图
                 crop_img = ImageProcessor.crop_with_mask(
                     frame, mask, bbox, scale, pad_top, pad_left
                 )
+                if crop_img is None:
+                    continue
                 big_category = big_category_names[int(cls_id)]
                 detect_ret = DetectResult(
-                    bbox=bbox.astype(int).tolist(),
+                    bbox=bbox,
                     big_category=big_category,
                     crop_img=crop_img,
-                    seg_conf=conf.item(),
+                    seg_conf=float(conf.item()),
                 )
                 detect_results.append(detect_ret)
+        del results
+
         return detect_results

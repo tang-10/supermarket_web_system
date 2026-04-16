@@ -1,5 +1,6 @@
 import pymysql
 from pymysql.cursors import DictCursor
+from functools import lru_cache
 
 from src.utils.config_utils import cfg
 from src.entities.schemas import ProductRegisterRequest
@@ -38,6 +39,7 @@ class ProductDBManager:
         except Exception as e:
             print(f"[数据库错误] 初始化商品表失败: {e}")
 
+    @lru_cache(maxsize=1024)
     def get_product_by_ids(self, ids: int | list) -> list[dict] | None:
         """
         根据 ids 查询商品详细信息

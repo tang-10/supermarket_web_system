@@ -1,5 +1,6 @@
 import numpy as np
 import cv2
+import time
 
 from src.models.manager import ModelManager
 from src.db.vector_db import VectorDBManager
@@ -24,19 +25,28 @@ class RealtimeRecognitionPipeline:
 
     def process_frame(self, frame) -> list[RecognizeResult]:
         """处理输入帧，输出识别结果列表"""
+
+        t_start = time.time()
+
         detect_results = self.model_mgr.detect_and_segment(frame)
+        t_yolo = time.time()
+
         recognize_results: list[RecognizeResult] = []
         if not detect_results:
             return recognize_results
+
+        t_convnext_total = 0
+        t_db_total = 0
         for detect in detect_results:
             big_category = detect.big_category
             if big_category not in cfg.BIG_CATEGORIES:
                 continue
             seg_conf = detect.seg_conf
+            t0 = time.time()
             feature_vector = self.model_mgr.extract_feature(
                 big_category, detect.crop_img
             )
-
+            t_convnext_total += time.time() - t0
             # 如果特征向量全为0，说明没有对应的大类模型，直接标记为未知
             if np.all(feature_vector == 0):
                 recognize_results.append(
@@ -48,6 +58,7 @@ class RealtimeRecognitionPipeline:
                 )
                 continue
 
+            t1 = time.time()
             # 在向量库中搜索最相似的商品
             search_results = self.vector_db.search(feature_vector, top_k=1)
             product_info = None
@@ -59,6 +70,9 @@ class RealtimeRecognitionPipeline:
                 product_info = self.product_db.get_product_by_ids(product_id)
                 if product_info:
                     product_info = product_info[0]  # 取第一个结果
+
+            t_db_total += time.time() - t1
+
             if product_info:
                 recognize_results.append(
                     RecognizeResult(
@@ -85,7 +99,10 @@ class RealtimeRecognitionPipeline:
                         score=0.0,
                     )
                 )
-
+        t_end = time.time()
+        print(
+            f"[耗时拆解] 总:{(t_end - t_start) * 1000:.1f}ms | YOLO:{(t_yolo - t_start) * 1000:.1f}ms | ConvNeXt:{t_convnext_total * 1000:.1f}ms | DB&Faiss:{t_db_total * 1000:.1f}ms"
+        )
         return recognize_results
 
     def run_video_file(self, video_path: str, output_path: str = "output_result.mp4"):
@@ -112,7 +129,7 @@ class RealtimeRecognitionPipeline:
 
         # 防止获取不到 fps 导致后续报错
         if fps == 0 or fps != fps:
-            fps = 25.0
+            fps = 30.0
 
         print(
             f"[*] 视频信息 - 分辨率: {width}x{height}, 帧率: {fps}, 总帧数: {total_frames}"

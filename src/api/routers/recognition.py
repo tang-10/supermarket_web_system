@@ -2,6 +2,7 @@ import struct
 import json
 import cv2
 import asyncio
+import time
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pathlib import Path
 
@@ -19,8 +20,6 @@ async def websocket_endpoint(websocket: WebSocket, video: str = "0"):
     if video.startswith("http://") or video.startswith("https://"):
         source = video  # 手机 IP 摄像头地址
     elif not video.isdigit():
-        from pathlib import Path
-
         source = str(Path("data/test_videos") / video)
     else:
         source = int(video)
@@ -29,49 +28,76 @@ async def websocket_endpoint(websocket: WebSocket, video: str = "0"):
         AppContext.model_mgr, AppContext.vector_db, AppContext.product_db
     )
     cap = cv2.VideoCapture(source)
+
+    # 尽可能减小底层缓冲区，防止延迟积累
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     is_paused = False
+
+    print(f"[*] WebSocket 视频流开启: 源={source}")
 
     try:
         while cap.isOpened():
-            # 检查暂停状态或接收前端消息
+            # 1. 以极短的超时检查前端是否发来了暂停/恢复指令
             try:
-                message = await asyncio.wait_for(websocket.receive_text(), timeout=0.01)
+                message = await asyncio.wait_for(
+                    websocket.receive_text(), timeout=0.005
+                )
                 if message == "pause":
                     is_paused = True
+                    print("[*] 收到暂停指令")
                 elif message == "resume":
                     is_paused = False
+                    print("[*] 收到恢复指令")
             except asyncio.TimeoutError:
-                pass  # 没有消息，继续处理
+                pass  # 没有消息，正常流转
 
+            # 2. 暂停状态处理
             if is_paused:
-                await asyncio.sleep(0.1)  # 暂停时降低CPU使用
+                await asyncio.sleep(0.1)
                 continue
+
+            loop_start = time.time()
+
+            # 3. 【核心优化】：清空积压的缓冲区，永远只取最新的一帧
+            # 因为推理耗时(如50ms) > 摄像头产生帧的时间(33ms)，必然有旧帧堆积
+            if "http" in str(source):
+                # 连抓几次丢弃旧图，保持画面绝对实时
+                cap.grab()
+                cap.grab()
 
             ret, frame = cap.read()
             if not ret:
                 cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                 continue
 
-            results = pipeline.process_frame(frame)
+            # 4. 后台线程执行 AI 推理，绝不阻塞主异步循环
+            process_start = time.time()
+            results = await asyncio.to_thread(pipeline.process_frame, frame)
+            process_time = time.time() - process_start
 
-            # 编码图片为原始字节 (不使用 Base64)
-            _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 60])
+            # 5. 编码与打包二进制数据
+            _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
             img_bytes = buffer.tobytes()
 
-            # 准备 JSON 数据
             res_data = [res.to_dict() for res in results]
             json_bytes = json.dumps({"results": res_data}).encode("utf-8")
-
-            # 构造二进制包：Header(4字节JSON长度) + JSON + Image
             header = struct.pack("!I", len(json_bytes))
 
-            # 发送二进制数据包
+            # 6. 发送数据包
             await websocket.send_bytes(header + json_bytes + img_bytes)
 
-            # 控制频率，防止发送堆积
-            await asyncio.sleep(0.01)
+            total_time = time.time() - loop_start
+            actual_fps = 1.0 / total_time if total_time > 0 else 0
 
+            # 简洁的性能打印
+            print(
+                f"[流控] 推理:{process_time * 1000:.1f}ms | 总耗时:{total_time * 1000:.1f}ms | FPS: {actual_fps:.1f}"
+            )
+
+    except WebSocketDisconnect:
+        print("[*] 前端断开 WebSocket 连接")
     except Exception as e:
-        print(f"WS Error: {e}")
+        print(f"[!] WS 异常: {e}")
     finally:
         cap.release()
+        ws_manager.disconnect(websocket)

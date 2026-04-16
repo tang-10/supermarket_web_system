@@ -45,6 +45,7 @@ class ConvNeXtFeatureModel(BaseClassificationModel):
             ]
         )
 
+    @torch.no_grad()
     def predict(self, crop_img: np.ndarray) -> np.ndarray:
         """输入分割小图 返回商品的768维特征向量"""
         if isinstance(crop_img, np.ndarray):
@@ -58,5 +59,9 @@ class ConvNeXtFeatureModel(BaseClassificationModel):
             x = self.model.avgpool(x)  # [B, 768, 1, 1]
             x = torch.flatten(x, 1)  # [B, 768]
             x = F.normalize(x, p=2, dim=1)  # L2 归一化
-            x = x.squeeze(0).cpu().numpy() if x.is_cuda else x.squeeze(0).numpy()
-        return x
+            x_np = x.detach().cpu().numpy().reshape(-1).copy()
+
+            # 释放不需要的 tensor 引用
+            del image_tensor
+            del x
+        return x_np

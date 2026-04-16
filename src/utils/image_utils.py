@@ -59,7 +59,7 @@ class ImageProcessor:
     def crop_with_mask(
         frame: np.ndarray,
         mask: np.ndarray,
-        box: np.ndarray,
+        box: list,
         frame_scale,
         frame_pad_top,
         frame_pad_left,
@@ -94,7 +94,7 @@ class ImageProcessor:
         masked_img[mask == 1] = orig_img[mask == 1]
 
         # 根据box裁剪，加一点padding防止边缘丢失
-        x1, y1, x2, y2 = box.astype(int).tolist()
+        x1, y1, x2, y2 = box
         pad = 20
         x1 = np.maximum(0, x1 - pad)
         y1 = np.maximum(0, y1 - pad)
