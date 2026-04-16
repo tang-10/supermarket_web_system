@@ -278,6 +278,16 @@ const initWebSocket = () => {
       console.error("解析二进制流失败:", e);
     }
   };
+
+  ws.onclose = () => {
+    isRunning.value = false;
+    isPaused.value = false;
+    ws = null;
+  };
+
+  ws.onerror = (err) => {
+    console.error('WebSocket 错误:', err);
+  };
 };
 
 const drawBox = (ctx, res) => {

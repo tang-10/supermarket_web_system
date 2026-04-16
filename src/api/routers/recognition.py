@@ -67,7 +67,11 @@ async def websocket_endpoint(websocket: WebSocket, video: str = "0"):
 
             ret, frame = cap.read()
             if not ret:
-                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                # 文件视频播放结束后停止，不循环重播
+                if isinstance(source, str) and not source.startswith("http"):
+                    break
+                # 对摄像头或网络流，继续等待下一帧
+                await asyncio.sleep(0.05)
                 continue
 
             # 4. 后台线程执行 AI 推理，绝不阻塞主异步循环
