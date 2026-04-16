@@ -11,6 +11,7 @@
         >
           <option value="camera">实时摄像头</option>
           <option value="file">测试视频文件</option>
+          <option value="ipcam">手机 IP 摄像头</option>
         </select>
       </div>
 
@@ -23,6 +24,14 @@
           accept="video/*"
         />
         <span class="text-xs text-gray-500">{{ uploadStatus || videoFileName || '未选择文件' }}</span>
+
+        <!-- 【新增】输入手机流地址的输入框 -->
+        <div v-if="mode === 'ipcam'" class="flex items-center gap-2">
+          <input v-model="ipCamUrl" type="text" 
+           :disabled="isRunning"
+           class="bg-zinc-800 border border-zinc-700 text-zinc-100 p-2 rounded-lg outline-none w-64 text-sm" 
+           placeholder="http://10.144.144.4:8080/video" />
+        </div>
       </div>
 
       <div class="flex items-center gap-2">
@@ -54,6 +63,10 @@
       <!-- 视频流容器 -->
       <div class="flex-[2] relative bg-black rounded-xl overflow-hidden shadow-2xl border border-gray-700">
         <canvas ref="canvasRef" class="w-full h-full object-contain"></canvas>
+
+        <div class="absolute top-2 left-2 bg-black/60 text-white px-3 py-1 rounded-lg text-sm font-medium">
+          FPS: {{ frameRate }}
+        </div>
 
         <div v-if="!isRunning" class="absolute inset-0 flex items-center justify-center text-gray-500">
           点击“开始识别”启动
@@ -118,6 +131,9 @@ const videoFileName = ref('');
 const uploadStatus = ref(''); // 新增：上传状态
 const canvasRef = ref(null);
 const fileInputRef = ref(null);
+const frameRate = ref(0);
+let lastFrameTime = performance.now();
+const ipCamUrl = ref('http://10.144.144.4:8080/video'); 
 
 let ws = null;
 
@@ -184,7 +200,13 @@ const toggleRecognition = () => {
 };
 
 const initWebSocket = () => {
-  const source = mode.value === 'camera' ? '0' : videoFileName.value;
+  let source = '0';
+  if (mode.value === 'file') {
+    source = videoFileName.value;
+  } else if (mode.value === 'ipcam') {
+    source = encodeURIComponent(ipCamUrl.value);
+  }
+  // const source = mode.value === 'camera' ? '0' : videoFileName.value;
   // 连接到后端服务器的 WebSocket
   ws = new WebSocket(`ws://localhost:8000/ws/recognition?video=${source}`);
   
@@ -215,6 +237,13 @@ const initWebSocket = () => {
       lastObjectURL = url;
 
       // 4. 渲染
+      const now = performance.now();
+      const delta = now - lastFrameTime;
+      if (delta > 0) {
+        frameRate.value = Math.round(1000 / delta);
+      }
+      lastFrameTime = now;
+
       const offscreenImg = new Image();
       offscreenImg.onload = () => {
         canvas.width = offscreenImg.width;
@@ -256,4 +285,4 @@ const drawBox = (ctx, res) => {
 };
 
 onUnmounted(stopAndClear);
-</script>
+</script>·

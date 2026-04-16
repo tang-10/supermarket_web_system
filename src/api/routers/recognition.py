@@ -16,7 +16,11 @@ router = APIRouter()
 async def websocket_endpoint(websocket: WebSocket, video: str = "0"):
     await ws_manager.connect(websocket)
 
-    if not video.isdigit():
+    if video.startswith("http://") or video.startswith("https://"):
+        source = video  # 手机 IP 摄像头地址
+    elif not video.isdigit():
+        from pathlib import Path
+
         source = str(Path("data/test_videos") / video)
     else:
         source = int(video)
