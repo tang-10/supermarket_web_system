@@ -22,7 +22,21 @@ class RecognizeResult(DetectResult):
 
     fine_class: str = "unknown"  # 细分类名称（如 'coke_500ml'）
     product_name: str = "未注册商品"  # 商品中文名
+    sku: str = ""  # 商品 SKU
+    price: float = 0.0  # 商品单价
     score: float = 0.0  # 向量检索相似度得分
+
+    def to_dict(self):
+        return {
+            "bbox": self.bbox,
+            "big_category": self.big_category,
+            "seg_conf": float(self.seg_conf),
+            "fine_class": self.fine_class,
+            "product_name": self.product_name,
+            "sku": self.sku,
+            "price": float(self.price),
+            "score": float(self.score),
+        }
 
 
 # ==========================================

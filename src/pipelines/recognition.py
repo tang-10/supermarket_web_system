@@ -67,6 +67,8 @@ class RealtimeRecognitionPipeline:
                         seg_conf=seg_conf,
                         fine_class=product_info["fine_class"],
                         product_name=product_info["product_name"],
+                        sku=product_info.get("sku", ""),
+                        price=float(product_info.get("unit_price", 0.0)),
                         score=search_results[0]["score"],
                     )
                 )
@@ -78,6 +80,8 @@ class RealtimeRecognitionPipeline:
                         seg_conf=seg_conf,
                         fine_class="unknown",
                         product_name="未注册商品",
+                        sku="unknown",
+                        price=0.0,
                         score=0.0,
                     )
                 )

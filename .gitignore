@@ -24,6 +24,9 @@ data/test_videos/*
 *.index
 *.bin
 
+frontend/node_modules/
+frontend/dist/
+
 # ==========================================
 # 2. AI 模型权重 (Model Weights)
 # ==========================================
