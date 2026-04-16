@@ -31,7 +31,7 @@ class RealtimeRecognitionPipeline:
         for detect in detect_results:
             big_category = detect.big_category
             if big_category not in cfg.BIG_CATEGORIES:
-                return recognize_results
+                continue
             seg_conf = detect.seg_conf
             feature_vector = self.model_mgr.extract_feature(
                 big_category, detect.crop_img
