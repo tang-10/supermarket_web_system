@@ -44,9 +44,6 @@ class YoloSegmentationModel(BaseSegmentationModel):
         )
         detect_results: list[DetectResult] = []
 
-        if torch.cuda.is_available():
-            torch.cuda.synchronize()
-
         for result in results:
             if result.boxes is None or len(result.boxes) == 0:
                 continue
@@ -63,7 +60,7 @@ class YoloSegmentationModel(BaseSegmentationModel):
             else:
                 ids_all = np.full(len(boxes_all), -1)
 
-            # 处理 Masks: masks.data 通常非常大，这里只在必要时转换
+            # 处理 Masks
             if result.masks is not None:
                 masks_all = result.masks.data.cpu().numpy().copy()
             else:

@@ -70,3 +70,58 @@ class VectorDBManager:
         D, I = self.index.search(query_vector, top_k)  # noqa: E741
         topk_results = [{"id": int(i), "score": float(d)} for i, d in zip(I[0], D[0])]
         return topk_results
+
+    def search_batch(
+        self, query_vectors: np.ndarray, top_k: int = 1
+    ) -> list[list[dict]]:
+        """
+        高度鲁棒的批量检索版
+        """
+        # 1. 基础存在性检查
+        if self.index is None or self.index.ntotal == 0:
+            num_queries = query_vectors.shape[0] if query_vectors.ndim > 0 else 1
+            return [[{"id": None, "score": 0.0}] * top_k for _ in range(num_queries)]
+
+        # 2. 确保是 Numpy 数组且重新赋值
+        vectors = np.array(query_vectors)
+
+        # 3. 强制转换为 2D 矩阵 (N, dim)
+        if vectors.ndim == 1:
+            vectors = vectors.reshape(1, -1)
+
+        # 4. 【核心修复】：校验维度是否与索引一致
+        if vectors.shape[1] != self.dim:
+            raise ValueError(
+                f"FAISS维度不匹配: 索引要求 {self.dim}, 输入为 {vectors.shape[1]}"
+            )
+
+        # 5. 【核心修复】：确保内存连续性 (C_CONTIGUOUS)
+        # 这一步能解决 90% 的 AssertionError
+        if not vectors.flags["C_CONTIGUOUS"]:
+            vectors = np.ascontiguousarray(vectors)
+
+        # 6. 【核心修复】：强制 float32 并处理 NaN
+        vectors = vectors.astype(np.float32)
+        if np.any(np.isnan(vectors)):
+            vectors = np.nan_to_num(vectors)  # 将 NaN 替换为 0
+
+        # 7. 执行检索
+        try:
+            D, I = self.index.search(vectors, top_k)
+        except Exception as e:
+            print(f"[FAISS底层错误] 检索失败: {e}")
+            return [
+                [{"id": None, "score": 0.0}] * top_k for _ in range(vectors.shape[0])
+            ]
+
+        # 8. 组装结果
+        all_results = []
+        for row_i, row_d in zip(I, D):
+            item_top_k = []
+            for i, d in zip(row_i, row_d):
+                item_top_k.append(
+                    {"id": int(i) if i != -1 else None, "score": float(d)}
+                )
+            all_results.append(item_top_k)
+
+        return all_results

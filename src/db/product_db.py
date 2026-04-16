@@ -12,6 +12,7 @@ class ProductDBManager:
     def __init__(self):
         self.db_config = cfg.DB_CONFIG
         self._init_db_table()
+        self._cache = {}  # 简单的字典缓存：{id: product_info_dict}
 
     def _get_connection(self):
         """获取数据库连接"""
@@ -69,6 +70,41 @@ class ProductDBManager:
             ids_str = str(ids) if isinstance(ids, int) else ", ".join(map(str, ids))
             print(f"[数据库查询错误] ids: [{ids_str}], 错误: {e}")
             return None
+
+    def get_product_by_ids_batch(self, ids: list[int]) -> dict[int, dict]:
+        """
+        批量查询：
+        1. 先从内存缓存找
+        2. 缺失的部分一次性去 DB 查
+        3. 存回缓存并返回
+        返回格式: {id: {sku:..., name:...}} 方便 O(1) 索引
+        """
+        if not ids:
+            return {}
+
+        # 去重，防止一帧内出现多个相同商品导致重复查询
+        unique_ids = list(set(ids))
+
+        # 1. 找出缓存中没有的 ID
+        missing_ids = [idx for idx in unique_ids if idx not in self._cache]
+
+        if missing_ids:
+            # 2. 只有当确实有缺失时才查数据库
+            placeholders = ",".join(["%s"] * len(missing_ids))
+            sql = f"SELECT * FROM products WHERE id IN ({placeholders})"
+            try:
+                with self._get_connection() as conn:
+                    with conn.cursor() as cursor:
+                        cursor.execute(sql, missing_ids)
+                        db_results = cursor.fetchall()
+                        # 3. 填入缓存
+                        for row in db_results:
+                            self._cache[row["id"]] = row
+            except Exception as e:
+                print(f"[DB Batch Error] {e}")
+
+        # 4. 从缓存中构造本次请求的结果映射
+        return {idx: self._cache[idx] for idx in unique_ids if idx in self._cache}
 
     def get_product_name(self, ids: str) -> str:
         """

@@ -1,6 +1,7 @@
 import numpy as np
 import cv2
 import time
+from collections import defaultdict
 
 from src.models.manager import ModelManager
 from src.db.vector_db import VectorDBManager
@@ -25,80 +26,99 @@ class RealtimeRecognitionPipeline:
 
     def process_frame(self, frame) -> list[RecognizeResult]:
         """处理输入帧，输出识别结果列表"""
-
+        recognize_results: list[RecognizeResult] = []
         t_start = time.time()
-
-        detect_results = self.model_mgr.detect_and_segment(frame)
+        # --- 步骤 1: YOLO 检测 ---
+        raw_detect_results = self.model_mgr.detect_and_segment(frame)
         t_yolo = time.time()
 
-        recognize_results: list[RecognizeResult] = []
+        if not raw_detect_results:
+            return recognize_results
+
+        # --- 立即过滤掉无效大类 ( hand) ---
+        # 只保留在 config.yaml 中定义的 bagged, bottled, boxed, canned
+        detect_results = [
+            det for det in raw_detect_results if det.big_category in cfg.BIG_CATEGORIES
+        ]
+
         if not detect_results:
             return recognize_results
 
         t_convnext_total = 0
         t_db_total = 0
-        for detect in detect_results:
+        # --- 步骤 2: ConvNeXt 批量提取特征 ---
+        # 按大类进行分组收集
+        # key: big_category, value: list of indices in detect_results
+        category_groups = defaultdict(list)
+        for i, detect in enumerate(detect_results):
             big_category = detect.big_category
             if big_category not in cfg.BIG_CATEGORIES:
-                continue
-            seg_conf = detect.seg_conf
-            t0 = time.time()
-            feature_vector = self.model_mgr.extract_feature(
-                big_category, detect.crop_img
+                category_groups[big_category] = []
+            category_groups[big_category].append(i)
+
+        # 空列表存储所有特征，位置与 detect_results 对应
+        all_features = [None] * len(detect_results)
+
+        t0 = time.time()
+        # 遍历分组，执行 Batch 推理
+        for big_category, indices in category_groups.items():
+            crops = [detect_results[idx].crop_img for idx in indices]
+            # 调用批量推理
+            batch_feats = self.model_mgr.extract_features_batch(big_category, crops)
+            # 将结果填回对应的索引位置
+            for i, idx in enumerate(indices):
+                all_features[idx] = batch_feats[i]
+
+            # feature_vector = self.model_mgr.extract_feature(
+            #     big_category, detect.crop_img
+            # )
+        t_convnext_total += time.time() - t0
+        t1 = time.time()
+        # --- 步骤 3: FAISS 批量检索 ---
+        valid_features = np.stack([f for f in all_features if f is not None])
+        search_results = self.vector_db.search_batch(valid_features, top_k=1)
+        # --- 步骤 4: MySQL 批量查询商品信息 ---
+        # 收集所有符合阈值的有效 ID
+        valid_pids = [
+            res[0]["id"]
+            for res in search_results
+            if res[0]["id"] is not None
+            and res[0]["score"] >= self.unkown_cls_conf_thresh
+        ]
+        product_map = self.product_db.get_product_by_ids_batch(valid_pids)
+        t_db_total += time.time() - t1
+        # --- 步骤 5: 结果组装 ---
+        for i, det in enumerate(detect_results):
+            score = search_results[i][0]["score"]
+            product_id = search_results[i][0]["id"]
+
+            product_info = (
+                product_map.get(product_id) if product_id is not None else None
             )
-            t_convnext_total += time.time() - t0
-            # 如果特征向量全为0，说明没有对应的大类模型，直接标记为未知
-            if np.all(feature_vector == 0):
-                recognize_results.append(
-                    RecognizeResult(
-                        bbox=detect.bbox,
-                        big_category=big_category,
-                        seg_conf=seg_conf,
-                    )
-                )
-                continue
-
-            t1 = time.time()
-            # 在向量库中搜索最相似的商品
-            search_results = self.vector_db.search(feature_vector, top_k=1)
-            product_info = None
-            if (
-                search_results
-                and search_results[0]["score"] >= self.unkown_cls_conf_thresh
-            ):
-                product_id = search_results[0]["id"]
-                product_info = self.product_db.get_product_by_ids(product_id)
-                if product_info:
-                    product_info = product_info[0]  # 取第一个结果
-
-            t_db_total += time.time() - t1
 
             if product_info:
-                recognize_results.append(
-                    RecognizeResult(
-                        bbox=detect.bbox,
-                        big_category=big_category,
-                        seg_conf=seg_conf,
-                        fine_class=product_info["fine_class"],
-                        product_name=product_info["product_name"],
-                        sku=product_info.get("sku", ""),
-                        price=float(product_info.get("unit_price", 0.0)),
-                        score=search_results[0]["score"],
-                    )
+                res = RecognizeResult(
+                    bbox=det.bbox,
+                    big_category=det.big_category,
+                    seg_conf=det.seg_conf,
+                    fine_class=product_info["fine_class"],
+                    product_name=product_info["product_name"],
+                    sku=product_info["sku"],
+                    price=float(product_info.get("unit_price", 0.0)),  # 获取价格
+                    score=float(score),
                 )
             else:
-                recognize_results.append(
-                    RecognizeResult(
-                        bbox=detect.bbox,
-                        big_category=big_category,
-                        seg_conf=seg_conf,
-                        fine_class="unknown",
-                        product_name="未注册商品",
-                        sku="unknown",
-                        price=0.0,
-                        score=0.0,
-                    )
+                res = RecognizeResult(
+                    bbox=det.bbox,
+                    big_category=det.big_category,
+                    seg_conf=det.seg_conf,
+                    fine_class="unknown",
+                    sku="unknown",
+                    product_name="未注册商品",
+                    price=0.0,
+                    score=0.0,
                 )
+            recognize_results.append(res)
         t_end = time.time()
         print(
             f"[耗时拆解] 总:{(t_end - t_start) * 1000:.1f}ms | YOLO:{(t_yolo - t_start) * 1000:.1f}ms | ConvNeXt:{t_convnext_total * 1000:.1f}ms | DB&Faiss:{t_db_total * 1000:.1f}ms"

@@ -65,3 +65,45 @@ class ConvNeXtFeatureModel(BaseClassificationModel):
             del image_tensor
             del x
         return x_np
+
+    @torch.no_grad()
+    def predict_batch(self, crop_imgs: list[np.ndarray]) -> np.ndarray:
+        """
+        输入分割小图列表，返回商品的 [N, 768] 维特征矩阵
+        :param crop_imgs: list[np.ndarray] 每一项为 BGR 格式的 numpy 数组
+        :return: np.ndarray 形状为 (N, 768)
+        """
+        if not crop_imgs:
+            return np.array([], dtype=np.float32).reshape(0, 768)
+
+        # 1. 批量预处理
+        tensors = []
+        for img in crop_imgs:
+            # BGR -> RGB
+            img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            # ndarray -> PIL
+            img_pil = Image.fromarray(img_rgb)
+            # Transform 并存入列表
+            tensors.append(self.transform(img_pil))
+
+        # 2. 堆叠成一个 Batch Tensor (Shape: [N, 3, 384, 384]) 并送入设备
+        image_batch = torch.stack(tensors).to(self.device)
+
+        # 3. 批量推理
+        # 使用 self.model.features -> avgpool -> flatten 的结构
+        x = self.model.features(image_batch)  # [N, 768, H', W']
+        x = self.model.avgpool(x)  # [N, 768, 1, 1]
+        x = torch.flatten(x, 1)  # [N, 768]
+
+        # 4. L2 归一化 (保持 dim=1)
+        x = F.normalize(x, p=2, dim=1)
+
+        # 5. 转为 Numpy 副本并断开显存联系
+        # 保留 (N, 768) 的结构
+        x_np = x.detach().cpu().numpy().astype(np.float32).copy()
+
+        # 6. 显式释放显存资源
+        del image_batch
+        del x
+
+        return x_np

@@ -38,3 +38,14 @@ class ModelManager:
             return np.zeros(cfg.FEATURES_DIM, dtype=np.float32)
 
         return target_model.predict(crop_img)
+
+    def extract_features_batch(
+        self, big_category: str, crops: list[np.ndarray]
+    ) -> np.ndarray:
+        """根据大类分发批量图片到对应的分类模型"""
+        target_model = self.cls_models.get(big_category)
+        if not target_model:
+            print(f"[警告] 未找到大类 {big_category} 对于的特征提取模型！")
+            return np.zeros((len(crops), cfg.FEATURES_DIM), dtype=np.float32)
+
+        return target_model.predict_batch(crops)

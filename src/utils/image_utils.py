@@ -65,56 +65,60 @@ class ImageProcessor:
         frame_pad_left,
         target_size=cfg.CLS_INPUT_SIZE,
     ) -> np.ndarray:
-        """根据分割掩码和边界框裁切出商品图像"""
-        # 深拷贝避免修改原始视频帧图像
-        orig_img = frame.copy()
+        """根据分割掩码和边界框裁切出商品图像
+        优化版：只在 BBox 范围内进行 Mask 运算和 Resize"""
 
-        # mask还原到原始分辨率
-        binary_mask = (mask > 0.5).astype(np.uint8)  # shape 1024,1024
+        orig_h, orig_w = frame.shape[:2]
+        x1, y1, x2, y2 = box
 
-        # 计算去 padding 后的尺寸
-        orig_h, orig_w = orig_img.shape[:2]  # 原始图片尺寸，例如 (1080, 1920)
-        unpad_h = int(round(orig_h * frame_scale))
-        unpad_w = int(round(orig_w * frame_scale))
+        # 1. 增加 Padding 并防止越界
+        pad = 20
+        cx1, cy1 = max(0, x1 - pad), max(0, y1 - pad)
+        cx2, cy2 = min(orig_w, x2 + pad), min(orig_h, y2 + pad)
 
-        # letterbox 的 padding
-        mask_unpadded = binary_mask[
-            frame_pad_top : frame_pad_top + unpad_h,
-            frame_pad_left : frame_pad_left + unpad_w,
-        ]
+        # 2. 直接截取原图 ROI (杜绝 frame.copy()，只引用内存)
+        roi_img = frame[cy1:cy2, cx1:cx2]
+        if roi_img.size == 0:
+            return None
 
-        # 还原到原始分辨率（必须用 NEAREST 保持二值特性）
-        mask = cv2.resize(
-            mask_unpadded,
-            (orig_w, orig_h),
-            interpolation=cv2.INTER_NEAREST,
+        # 3. 将 ROI 坐标映射回 Mask 的坐标空间 (1024x1024)
+        # 公式：Mask_coord = Image_coord * scale + padding
+        mx1 = int(cx1 * frame_scale + frame_pad_left)
+        my1 = int(cy1 * frame_scale + frame_pad_top)
+        mx2 = int(cx2 * frame_scale + frame_pad_left)
+        my2 = int(cy2 * frame_scale + frame_pad_top)
+
+        # 4. 截取局部 Mask 并进行二值化
+        local_mask = mask[my1:my2, mx1:mx2]
+        if local_mask.size == 0:
+            return None
+
+        # 5. 只对局部 Mask 进行 Resize (还原到 ROI 的大小)
+        local_mask_resized = cv2.resize(
+            local_mask,
+            (roi_img.shape[1], roi_img.shape[0]),
+            interpolation=cv2.INTER_LINEAR,
         )
 
-        masked_img = np.zeros_like(orig_img)
-        masked_img[mask == 1] = orig_img[mask == 1]
+        # 生成二进制掩码
+        binary_mask = (local_mask_resized > 0.5).astype(np.uint8)
 
-        # 根据box裁剪，加一点padding防止边缘丢失
-        x1, y1, x2, y2 = box
-        pad = 20
-        x1 = np.maximum(0, x1 - pad)
-        y1 = np.maximum(0, y1 - pad)
-        x2 = np.minimum(orig_img.shape[1], x2 + pad)
-        y2 = np.minimum(orig_img.shape[0], y2 + pad)
+        # 6. 局部掩码运算 (只在 BBox 区域内进行)
+        masked_roi = cv2.bitwise_and(roi_img, roi_img, mask=binary_mask)
 
-        crop = masked_img[y1:y2, x1:x2]
-
-        # RESIZE：保持原始宽高比 + 居中黑色 padding
-        h, w = crop.shape[:2]
+        # 7. 最终 Resize 到分类模型输入尺寸 (Letterbox 居中处理)
+        h, w = masked_roi.shape[:2]
         scale = target_size / max(h, w)
         new_h, new_w = int(h * scale), int(w * scale)
-        resized = cv2.resize(crop, (new_w, new_h))
+        resized_roi = cv2.resize(masked_roi, (new_w, new_h))
 
-        background = np.zeros((target_size, target_size, 3), dtype=np.uint8)
+        # 创建背景并居中贴图
+        final_crop = np.zeros((target_size, target_size, 3), dtype=np.uint8)
         top = (target_size - new_h) // 2
         left = (target_size - new_w) // 2
-        background[top : top + new_h, left : left + new_w] = resized
+        final_crop[top : top + new_h, left : left + new_w] = resized_roi
 
-        return background
+        return final_crop
 
     @staticmethod
     def draw_box_with_label(img, box, text, color, alpha=0.4):
