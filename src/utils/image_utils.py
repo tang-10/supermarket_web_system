@@ -168,7 +168,7 @@ class ImageProcessor:
         )
 
     @staticmethod
-    def deduplicate_images(frame_list, hash_size=8, threshold=5):
+    def deduplicate_images(frame_list, hash_size=16, threshold=5):
         """
         使用dHash算法对图片列表进行去重
         :param frame_list: cv2读取的ndarray列表
