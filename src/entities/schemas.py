@@ -14,6 +14,7 @@ class DetectResult:
     big_category: str  # 四大类（袋、瓶、罐、盒）(bagged, bottled...)
     crop_img: object | None = None  # 裁剪出的商品小图 (BGR numpy array)
     seg_conf: float = 0.0  # 大品类置信度
+    track_id: int = -1  # 轨迹ID
 
 
 @dataclass

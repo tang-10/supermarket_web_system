@@ -39,6 +39,7 @@ class YoloSegmentationModel(BaseSegmentationModel):
             imgsz=cfg.SEG_INPUT_SIZE,
             conf=cfg.SEG_CONF_THRESH,
             iou=cfg.SEG_IOU_THRESH,
+            tracker="bytetrack.yaml",  # botsort.yaml
             verbose=False,  # 关闭详细日志输出
             stream=True,  # 启用生成器模式，处理完立即释放
         )
@@ -97,6 +98,7 @@ class YoloSegmentationModel(BaseSegmentationModel):
                     big_category=big_category,
                     crop_img=crop_img,
                     seg_conf=float(conf.item()),
+                    track_id=int(track_id),
                 )
                 detect_results.append(detect_ret)
         del results
