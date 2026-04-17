@@ -49,8 +49,7 @@ class YoloSegmentationModel(BaseSegmentationModel):
             if result.boxes is None or len(result.boxes) == 0:
                 continue
 
-            # 【关键优化】：一次性将所有需要的数据搬运到 CPU 并断开梯度
-            # 必须使用 .copy()，否则这些 Numpy 数组会一直引用显存中的大块数据
+            # 一次性将所有需要的数据搬运到 CPU 并断开梯度
             boxes_all = result.boxes.xyxy.cpu().numpy().copy()
             conf_all = result.boxes.conf.cpu().numpy().copy()
             cls_all = result.boxes.cls.cpu().numpy().copy()

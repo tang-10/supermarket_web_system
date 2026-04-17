@@ -75,7 +75,7 @@ class VectorDBManager:
         self, query_vectors: np.ndarray, top_k: int = 1
     ) -> list[list[dict]]:
         """
-        高度鲁棒的批量检索版
+        批量检索版
         """
         # 1. 基础存在性检查
         if self.index is None or self.index.ntotal == 0:
@@ -89,18 +89,17 @@ class VectorDBManager:
         if vectors.ndim == 1:
             vectors = vectors.reshape(1, -1)
 
-        # 4. 【核心修复】：校验维度是否与索引一致
+        # 4. 校验维度是否与索引一致
         if vectors.shape[1] != self.dim:
             raise ValueError(
                 f"FAISS维度不匹配: 索引要求 {self.dim}, 输入为 {vectors.shape[1]}"
             )
 
-        # 5. 【核心修复】：确保内存连续性 (C_CONTIGUOUS)
-        # 这一步能解决 90% 的 AssertionError
+        # 5. 确保内存连续性 (C_CONTIGUOUS)
         if not vectors.flags["C_CONTIGUOUS"]:
             vectors = np.ascontiguousarray(vectors)
 
-        # 6. 【核心修复】：强制 float32 并处理 NaN
+        # 6. 强制 float32 并处理 NaN
         vectors = vectors.astype(np.float32)
         if np.any(np.isnan(vectors)):
             vectors = np.nan_to_num(vectors)  # 将 NaN 替换为 0

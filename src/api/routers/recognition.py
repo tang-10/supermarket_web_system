@@ -58,8 +58,7 @@ async def websocket_endpoint(websocket: WebSocket, video: str = "0"):
 
             loop_start = time.time()
 
-            # 3. 【核心优化】：清空积压的缓冲区，永远只取最新的一帧
-            # 因为推理耗时(如50ms) > 摄像头产生帧的时间(33ms)，必然有旧帧堆积
+            # 3. 清空积压的缓冲区，永远只取最新的一帧
             if "http" in str(source):
                 # 连抓几次丢弃旧图，保持画面绝对实时
                 cap.grab()
@@ -74,7 +73,7 @@ async def websocket_endpoint(websocket: WebSocket, video: str = "0"):
                 await asyncio.sleep(0.05)
                 continue
 
-            # 4. 后台线程执行 AI 推理，绝不阻塞主异步循环
+            # 4. 后台线程执行推理，不阻塞主异步循环
             process_start = time.time()
             results = await asyncio.to_thread(pipeline.process_frame, frame)
             process_time = time.time() - process_start
@@ -93,7 +92,6 @@ async def websocket_endpoint(websocket: WebSocket, video: str = "0"):
             total_time = time.time() - loop_start
             actual_fps = 1.0 / total_time if total_time > 0 else 0
 
-            # 简洁的性能打印
             print(
                 f"[流控] 推理:{process_time * 1000:.1f}ms | 总耗时:{total_time * 1000:.1f}ms | FPS: {actual_fps:.1f}"
             )
