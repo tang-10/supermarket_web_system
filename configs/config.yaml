@@ -20,10 +20,10 @@ paths:
 models:
   features_dim: 768
   seg_input_size: 1024
-  seg_conf_thresh: 0.6
+  seg_conf_thresh: 0.7
   seg_iou_thresh: 0.5
   cls_input_size: 384
-  unkonwn_cls_conf_thresh: 0.9
+  unkonwn_cls_conf_thresh: 0.95
   
   segmentation:
     weights: "weights/segmenter/yolo11m_seg_best_1024_v4.pt"

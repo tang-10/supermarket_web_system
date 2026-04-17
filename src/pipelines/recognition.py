@@ -27,11 +27,19 @@ class RealtimeRecognitionPipeline:
         # 特征缓存字典
         self.track_cache = {}
 
+        # 稳定器配置
+        self.STABILIZE_FRAME_COUNT = 20  # 一个新ID前30帧强制识别，不跳过
+        self.LOCK_SCORE_THRESH = 0.96  # 如果识别分数超过这个值，再锁定
+
     def process_frame(self, frame) -> list[RecognizeResult]:
         """处理输入帧，输出识别结果列表"""
         t_start = time.time()
 
-        # --- YOLO 跟踪侦测 ---
+        h_img, w_img = frame.shape[:2]
+        # 1. 定义识别核心区
+        roi_x1, roi_y1 = w_img * 0.2, h_img * 0.2
+        roi_x2, roi_y2 = w_img * 0.8, h_img * 0.8
+
         raw_detect_results = self.model_mgr.detect_and_segment(frame)
         t_yolo = time.time()
 
@@ -39,7 +47,7 @@ class RealtimeRecognitionPipeline:
             self.track_cache.clear()
             return []
 
-        # 过滤无效大类并确保 track_id 存在
+        # 丢掉大分类以外的侦测目标
         detect_results = [
             det for det in raw_detect_results if det.big_category in cfg.BIG_CATEGORIES
         ]
@@ -48,27 +56,32 @@ class RealtimeRecognitionPipeline:
             return []
 
         current_track_ids = set()
-        final_results = [None] * len(detect_results)  # 用于存放最终结果，保持顺序
+        final_results = [None] * len(detect_results)
+        pending_indices = []
 
-        pending_indices = []  # 存储需要重新推理的索引
-
-        # --- 查缓存分流 ---
+        # --- 步骤 2: 查缓存分流 ---
         for i, det in enumerate(detect_results):
             tid = det.track_id
             if tid != -1:
                 current_track_ids.add(tid)
 
-            # 命中缓存判断
+            # 计算中心点判定是否在核心区
+            cx, cy = (det.bbox[0] + det.bbox[2]) / 2, (det.bbox[1] + det.bbox[3]) / 2
+            is_in_core_zone = roi_x1 < cx < roi_x2 and roi_y1 < cy < roi_y2
+
             if tid != -1 and tid in self.track_cache:
                 cached_data = self.track_cache[tid]
 
+                # 如果不在核心区，或者还没达到稳定帧数，或者还是未知，则必须重新提取特征
                 if (
-                    cached_data["fine_class"] == "unknown"
-                    or cached_data["score"] < 0.85
+                    not is_in_core_zone
+                    or cached_data["hits"] < self.STABILIZE_FRAME_COUNT
+                    or cached_data["fine_class"] == "unknown"
+                    or cached_data["big_category"] != det.big_category
                 ):
                     pending_indices.append(i)
                 else:
-                    # 命中缓存：提取识别信息，但使用当前帧的 bbox 和 seg_conf
+                    # 只有在核心区且稳定的 ID，才直接复用缓存
                     final_results[i] = RecognizeResult(
                         bbox=det.bbox,
                         big_category=det.big_category,
@@ -80,18 +93,16 @@ class RealtimeRecognitionPipeline:
                         price=cached_data["price"],
                         score=cached_data["score"],
                     )
+                    self.track_cache[tid]["hits"] += 1
             else:
                 pending_indices.append(i)
 
         t_convnext_total = 0
         t_db_total = 0
 
-        # --- 仅对 "新目标" 进行重度批量推理 ---
+        # --- 步骤 3: 仅对需要推理的目标进行 Batch 推理 ---
         if pending_indices:
-            # 提取需要推理的 crops
             pending_detects = [detect_results[idx] for idx in pending_indices]
-
-            # 按大类分组
             category_groups = defaultdict(list)
             for i, det in enumerate(pending_detects):
                 category_groups[det.big_category].append(i)
@@ -107,11 +118,9 @@ class RealtimeRecognitionPipeline:
             t_convnext_total = time.time() - t0
 
             t1 = time.time()
-            # 批量检索
             valid_features = np.stack(all_features)
             search_results = self.vector_db.search_batch(valid_features, top_k=1)
 
-            # 批量查库
             valid_pids = [
                 res[0]["id"]
                 for res in search_results
@@ -120,24 +129,30 @@ class RealtimeRecognitionPipeline:
             ]
             product_map = self.product_db.get_product_by_ids_batch(valid_pids)
 
-            # 将新推理的结果填入 final_results 并更新缓存
+            # --- 步骤 4: 结果组装与缓存更新---
             for i, idx_in_detect in enumerate(pending_indices):
                 det = detect_results[idx_in_detect]
                 score = float(search_results[i][0]["score"])
-                pid = search_results[i][0]["id"]
+                product_id = search_results[i][0]["id"]
+                product_info = (
+                    product_map.get(product_id) if product_id is not None else None
+                )
 
-                info = product_map.get(pid) if pid is not None else None
-
-                if info and score >= self.unkown_cls_conf_thresh:
+                # 结果组装
+                if (
+                    product_info
+                    and score >= self.unkown_cls_conf_thresh
+                    and product_info.get("big_category") == det.big_category
+                ):
                     res_obj = RecognizeResult(
                         bbox=det.bbox,
                         big_category=det.big_category,
                         seg_conf=det.seg_conf,
                         track_id=det.track_id,
-                        fine_class=info["fine_class"],
-                        product_name=info["product_name"],
-                        sku=info["sku"],
-                        price=float(info.get("unit_price", 0.0)),
+                        fine_class=product_info["fine_class"],
+                        product_name=product_info["product_name"],
+                        sku=product_info["sku"],
+                        price=float(product_info.get("unit_price", 0.0)),
                         score=score,
                     )
                 else:
@@ -148,26 +163,60 @@ class RealtimeRecognitionPipeline:
                         track_id=det.track_id,
                         fine_class="unknown",
                         sku="unknown",
-                        product_name="未注册商品",
+                        product_name="未注册商品" if is_in_core_zone else "识别中...",
                         price=0.0,
                         score=0.0,
                     )
 
                 final_results[idx_in_detect] = res_obj
 
-                # 更新缓存 (只存关键识别信息，不存 bbox 以免混淆)
+                # 更新缓存
+                # 重新计算该 pending 目标的中心点
+                cx, cy = (
+                    (det.bbox[0] + det.bbox[2]) / 2,
+                    (det.bbox[1] + det.bbox[3]) / 2,
+                )
+                is_in_core_zone = roi_x1 < cx < roi_x2 and roi_y1 < cy < roi_y2
+
+                # ---只有在核心区才允许记录商品名 ---
                 if det.track_id != -1:
-                    self.track_cache[det.track_id] = {
-                        "fine_class": res_obj.fine_class,
-                        "product_name": res_obj.product_name,
-                        "sku": res_obj.sku,
-                        "price": res_obj.price,
-                        "score": res_obj.score,
-                    }
+                    if det.track_id not in self.track_cache:
+                        # 如果初始入场不在核心区，记录但强制设为 unknown
+                        self.track_cache[det.track_id] = {
+                            "hits": 1,
+                            "score": score,
+                            "fine_class": res_obj.fine_class
+                            if is_in_core_zone
+                            else "unknown",
+                            "product_name": res_obj.product_name
+                            if is_in_core_zone
+                            else "识别中...",
+                            "sku": res_obj.sku if is_in_core_zone else "unknown",
+                            "price": res_obj.price,
+                            "big_category": res_obj.big_category,
+                        }
+                    else:
+                        # 已存在缓存，进行择优更新
+                        old_cache = self.track_cache[det.track_id]
+                        # 【只有在核心区捕捉到的结果，才允许覆盖旧身份
+                        if is_in_core_zone:
+                            if (
+                                score > old_cache["score"]
+                                or old_cache["fine_class"] == "unknown"
+                            ):
+                                self.track_cache[det.track_id].update(
+                                    {
+                                        "score": score,
+                                        "fine_class": res_obj.fine_class,
+                                        "product_name": res_obj.product_name,
+                                        "sku": res_obj.sku,
+                                        "price": res_obj.price,
+                                    }
+                                )
+                        self.track_cache[det.track_id]["hits"] += 1
             t_db_total = time.time() - t1
 
-        # --- 清理过期缓存 (防止内存泄漏) ---
-        # 如果 track_id 不在当前帧里，就从缓存删掉
+        # --- 步骤 5: 清理过期缓存 ---
         expired_ids = [tid for tid in self.track_cache if tid not in current_track_ids]
         for tid in expired_ids:
             del self.track_cache[tid]
@@ -176,7 +225,6 @@ class RealtimeRecognitionPipeline:
         print(
             f"[耗时拆解] 总:{(t_end - t_start) * 1000:.1f}ms | YOLO:{(t_yolo - t_start) * 1000:.1f}ms | ConvNeXt:{t_convnext_total * 1000:.1f}ms | DB&Faiss:{t_db_total * 1000:.1f}ms"
         )
-
         return final_results
 
     def run_video_file(self, video_path: str, output_path: str = "output_result.mp4"):

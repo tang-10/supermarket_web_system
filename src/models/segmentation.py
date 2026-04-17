@@ -39,7 +39,7 @@ class YoloSegmentationModel(BaseSegmentationModel):
             imgsz=cfg.SEG_INPUT_SIZE,
             conf=cfg.SEG_CONF_THRESH,
             iou=cfg.SEG_IOU_THRESH,
-            tracker="bytetrack.yaml",  # botsort.yaml
+            tracker="botsort.yaml",  # botsort.yaml或者bytetrack.yaml
             verbose=False,  # 关闭详细日志输出
             stream=True,  # 启用生成器模式，处理完立即释放
         )
